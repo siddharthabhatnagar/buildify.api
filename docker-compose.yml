@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - API_AUTH_TOKEN=${API_AUTH_TOKEN:-}
+      - PB_DATABASE_URL=sqlite+aiosqlite:///./project_builder.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-["*"]}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-10}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-3600}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Uncomment to use PostgreSQL instead of SQLite:
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: projectbuilder
+  #     POSTGRES_PASSWORD: secretpassword
+  #     POSTGRES_DB: project_builder
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+# volumes:
+#   pgdata:
