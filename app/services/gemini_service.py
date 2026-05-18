@@ -1,5 +1,6 @@
 import json
 import logging
+import asyncio
 from typing import Any, Type, TypeVar
 
 import httpx
@@ -41,6 +42,7 @@ class GeminiService:
 
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
+        self._concurrency_limit = asyncio.Semaphore(1)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -134,24 +136,25 @@ class GeminiService:
         """Dispatch LLM call based on configured provider."""
         provider = settings.llm_provider.strip().lower()
 
-        if provider == "auto":
-            if settings.cerebras_api_key:
+        async with self._concurrency_limit:
+            if provider == "auto":
+                if settings.cerebras_api_key:
+                    return await self._call_cerebras(system_instruction, user_prompt)
+                if settings.gemini_api_key:
+                    return await self._call_gemini(system_instruction, user_prompt)
+                raise ValueError(
+                    "No API key configured. Set CEREBRAS_API_KEY or GEMINI_API_KEY."
+                )
+
+            if provider == "cerebras":
                 return await self._call_cerebras(system_instruction, user_prompt)
-            if settings.gemini_api_key:
+
+            if provider == "gemini":
                 return await self._call_gemini(system_instruction, user_prompt)
+
             raise ValueError(
-                "No API key configured. Set CEREBRAS_API_KEY or GEMINI_API_KEY."
+                "Invalid LLM_PROVIDER. Use one of: auto, cerebras, gemini."
             )
-
-        if provider == "cerebras":
-            return await self._call_cerebras(system_instruction, user_prompt)
-
-        if provider == "gemini":
-            return await self._call_gemini(system_instruction, user_prompt)
-
-        raise ValueError(
-            "Invalid LLM_PROVIDER. Use one of: auto, cerebras, gemini."
-        )
 
     # ── Structured call with caching + Pydantic validation ──
 
@@ -184,10 +187,23 @@ class GeminiService:
             result = response_model(**raw)
         except ValidationError as e:
             logger.error("LLM returned invalid data for %s: %s", cache_type, e)
-            raise ValueError(
-                f"LLM returned data that does not match expected schema for {cache_type}. "
-                f"Please try again."
-            ) from e
+            repair_prompt = (
+                "The following JSON did not validate against the required schema. "
+                "Return a corrected JSON object only, with the same meaning if possible, "
+                "and ensure every enum value exactly matches the schema.\n\n"
+                f"Validation error: {e}\n\n"
+                f"Invalid JSON:\n{json.dumps(raw, ensure_ascii=False, indent=2)}"
+            )
+
+            try:
+                repaired_raw = await self._call_provider(system_instruction, repair_prompt)
+                result = response_model(**repaired_raw)
+            except Exception as repair_exc:
+                logger.error("LLM repair failed for %s: %s", cache_type, repair_exc)
+                raise ValueError(
+                    f"LLM returned data that does not match expected schema for {cache_type}. "
+                    f"Please try again."
+                ) from e
 
         # Cache the validated dict
         set_cached(cache_key, result.model_dump())

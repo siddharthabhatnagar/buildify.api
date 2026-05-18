@@ -22,10 +22,11 @@ class RevenueService:
             f"Currency: {currency}\n\n"
             f"Recommend the best monetization model, estimate MRR at month 6 and 12, "
             f"calculate break-even, and suggest a pricing strategy.\n\n"
+            f"The estimate.model field must be exactly one of: Freemium, Subscription, Ads, Marketplace, One-time Purchase, Hybrid.\n\n"
             f"Return JSON:\n"
             f'{{\n'
             f'  "estimate": {{\n'
-            f'    "model": "Freemium|Subscription|Ads|Marketplace|One-time Purchase|Hybrid",\n'
+            f'    "model": "Freemium",\n'
             f'    "model_description": "why this model",\n'
             f'    "monthly_users_estimate_year_1": 10000,\n'
             f'    "estimated_mrr_month_6": 5000,\n'
