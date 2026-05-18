@@ -63,12 +63,10 @@ class DeepCostEstimate(BaseModel):
             + self.project_management
             + self.contingency
         )
-        # Allow 10% tolerance for rounding differences
-        if component_sum > 0 and abs(self.total - component_sum) > component_sum * 0.1:
-            raise ValueError(
-                f"Total ({self.total}) does not match sum of components "
-                f"({component_sum}) within 10% tolerance."
-            )
+        # Normalize the total to the computed component sum so small math drift
+        # from the LLM does not fail the whole analysis.
+        if component_sum > 0:
+            self.total = round(component_sum, 2)
         return self
 
 

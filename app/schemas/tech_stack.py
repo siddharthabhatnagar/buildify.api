@@ -13,15 +13,15 @@ class TechOption(BaseModel):
 
 
 class TechDetail(BaseModel):
-    name: str = Field(..., description="Technology name.")
-    pros: list[str] = Field(..., description="Advantages of this technology.")
-    cons: list[str] = Field(..., description="Disadvantages of this technology.")
-    cost_per_month: float = Field(..., ge=0, description="Estimated monthly cost.")
+    name: str = Field(default="Unknown", description="Technology name.")
+    pros: list[str] = Field(default_factory=list, description="Advantages of this technology.")
+    cons: list[str] = Field(default_factory=list, description="Disadvantages of this technology.")
+    cost_per_month: float = Field(default=0, ge=0, description="Estimated monthly cost.")
     setup_difficulty: str = Field(
-        ..., description="How hard to set up: Easy, Medium, or Hard."
+        default="Medium", description="How hard to set up: Easy, Medium, or Hard."
     )
     scalability: str = Field(
-        ..., description="Scalability rating: Low, Medium, High."
+        default="Medium", description="Scalability rating: Low, Medium, High."
     )
 
 
