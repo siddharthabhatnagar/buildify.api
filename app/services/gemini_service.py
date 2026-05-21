@@ -219,12 +219,18 @@ class GeminiService:
             result = response_model(**raw)
         except ValidationError as e:
             logger.error("LLM returned invalid data for %s: %s", cache_type, e)
+            schema_hint = response_model.model_json_schema()
+            compact_error = str(e)
+            if len(compact_error) > 1500:
+                compact_error = compact_error[:1500] + "..."
+
             repair_prompt = (
                 "The following JSON did not validate against the required schema. "
-                "Return a corrected JSON object only, with the same meaning if possible, "
-                "and ensure every enum value exactly matches the schema.\n\n"
-                f"Validation error: {e}\n\n"
-                f"Invalid JSON:\n{json.dumps(raw, ensure_ascii=False, indent=2)}"
+                "Return one corrected JSON object only, with the same meaning if possible. "
+                "All required fields must be present and enum values must match exactly.\n\n"
+                f"Target schema:\n{json.dumps(schema_hint, ensure_ascii=False)}\n\n"
+                f"Validation error summary:\n{compact_error}\n\n"
+                f"Invalid JSON:\n{json.dumps(raw, ensure_ascii=False)}"
             )
 
             try:

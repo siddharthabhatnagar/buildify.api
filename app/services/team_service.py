@@ -21,13 +21,15 @@ class TeamService:
             f"Currency: {currency}\n\n"
             f"For each role, specify: title, duration in months, employment type, "
             f"monthly rate, required skills, and responsibilities.\n\n"
+            f"Return ONLY valid JSON. Do not include markdown, comments, or explanations.\n"
+            f"Do not omit any top-level fields.\n\n"
             f"Return JSON:\n"
             f'{{\n'
             f'  "team": [\n'
             f'    {{\n'
             f'      "role": "Flutter Developer",\n'
             f'      "duration_months": 3,\n'
-            f'      "employment_type": "Full-time|Part-time|Freelance|Contract",\n'
+            f'      "employment_type": "Full-time",\n'
             f'      "estimated_monthly_rate": 5000,\n'
             f'      "skills_required": ["Flutter", "Dart", "Firebase"],\n'
             f'      "responsibilities": ["Build mobile UI", "Integrate APIs"]\n'
