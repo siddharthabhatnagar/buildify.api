@@ -5,6 +5,7 @@ import os
 import tempfile
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from firebase_admin import credentials, firestore, initialize_app, _apps
 from pydantic import BaseModel
@@ -47,7 +48,7 @@ db = init_firestore()
 class PaymentVerificationRequest(BaseModel):
     razorpay_payment_id: str
     razorpay_order_id: Optional[str] = None
-    razorpay_signature: str
+    razorpay_signature: Optional[str] = None
     amount: int
     category: str
     user_id: str
@@ -68,6 +69,16 @@ def verify_signature(payment_id: str, order_id: Optional[str], signature: str, s
 
     expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+async def fetch_razorpay_payment(payment_id: str, key_id: str, secret: str) -> dict:
+    url = f"https://api.razorpay.com/v1/payments/{payment_id}"
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, auth=(key_id, secret), timeout=10.0)
+        if response.status_code != 200:
+            logger.error("Razorpay payment fetch failed: %s %s", response.status_code, response.text)
+            raise HTTPException(status_code=502, detail="Unable to verify payment with Razorpay.")
+        return response.json()
 
 
 @app.get("/")
@@ -95,14 +106,41 @@ async def verify_payment(payload: PaymentVerificationRequest):
         logger.error("RAZORPAY_SECRET_KEY is missing")
         raise HTTPException(status_code=500, detail="Payment gateway not configured.")
 
-    if not verify_signature(
-        payment_id=payload.razorpay_payment_id,
-        order_id=payload.razorpay_order_id,
-        signature=payload.razorpay_signature,
-        secret=razorpay_secret,
-    ):
-        logger.warning("Invalid Razorpay signature for payment %s", payload.razorpay_payment_id)
-        raise HTTPException(status_code=400, detail="Invalid payment signature.")
+    verified_payment = None
+    order_id = payload.razorpay_order_id or ""
+
+    if payload.razorpay_signature:
+        if not verify_signature(
+            payment_id=payload.razorpay_payment_id,
+            order_id=order_id,
+            signature=payload.razorpay_signature,
+            secret=razorpay_secret,
+        ):
+            logger.warning("Invalid Razorpay signature for payment %s", payload.razorpay_payment_id)
+            raise HTTPException(status_code=400, detail="Invalid payment signature.")
+        verified_payment = {
+            "id": payload.razorpay_payment_id,
+            "order_id": order_id,
+            "amount": payload.amount * 100,
+            "currency": "INR",
+            "status": "captured",
+        }
+    else:
+        razorpay_key_id = os.getenv("RAZORPAY_KEY_ID", "")
+        if not razorpay_key_id:
+            logger.error("RAZORPAY_KEY_ID is missing")
+            raise HTTPException(status_code=500, detail="Payment gateway not configured.")
+        verified_payment = await fetch_razorpay_payment(payload.razorpay_payment_id, razorpay_key_id, razorpay_secret)
+
+        if verified_payment.get("status") != "captured":
+            logger.warning("Razorpay payment not captured: %s", verified_payment.get("status"))
+            raise HTTPException(status_code=400, detail="Payment has not been captured.")
+
+        if verified_payment.get("amount") != payload.amount * 100:
+            logger.warning("Razorpay amount mismatch: expected %s, got %s", payload.amount * 100, verified_payment.get("amount"))
+            raise HTTPException(status_code=400, detail="Payment amount mismatch.")
+
+        order_id = verified_payment.get("order_id", order_id) or ""
 
     payment_doc = {
         "userId": payload.user_id,
@@ -110,13 +148,13 @@ async def verify_payment(payload: PaymentVerificationRequest):
         "category": payload.category,
         "amount": payload.amount,
         "transactionId": payload.razorpay_payment_id,
-        "orderId": payload.razorpay_order_id or "",
+        "orderId": order_id,
         "status": "verified",
         "verified": True,
         "createdAt": firestore.SERVER_TIMESTAMP,
     }
 
-    doc_ref = db.collection("payments").add(payment_doc)
+    db.collection("payments").add(payment_doc)
     payment_id = payload.razorpay_payment_id
     logger.info("Saved verified payment %s to Firestore", payment_id)
 
